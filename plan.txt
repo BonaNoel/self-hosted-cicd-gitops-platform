@@ -1,0 +1,37 @@
+Gitea                → Git hosting
+Woodpecker CI        → build & test pipeline
+Docker Registry      → container images
+Kind cluster         → Kubernetes
+Flux CD / Argo       → deployment
+Prometheus           → metrics
+Grafana              → dashboards
+Loki                 → logs
+Java Spring service  → demo application
+
+Developer pushes code
+        │
+        ▼
+Self-hosted Git server
+        │
+        ▼
+Self-hosted CI pipeline
+(build + test + container image)
+        │
+        ▼
+Container registry
+        │
+        ▼
+CD tool deploys to Kubernetes
+        │
+        ▼
+Application running in cluster
+        │
+        ▼
+Monitoring + logging stack
+
+
+Java spring boot apis
+GET /health
+GET /users
+POST /orders
+GET /simulate-load

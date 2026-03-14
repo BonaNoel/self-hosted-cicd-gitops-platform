@@ -1,0 +1,22 @@
+spring:
+  application:
+    name: pipeline-pilot
+
+server:
+  port: 8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: always
+
+info:
+  app:
+    name: pipeline-pilot
+    description: Demo service for self-hosted CI/CD thesis
