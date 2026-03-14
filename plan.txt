@@ -1,5 +1,5 @@
 Gitea                → Git hosting
-Woodpecker CI        → build & test pipeline
+WoodpeckerCI / Gitea → build & test pipeline
 Docker Registry      → container images
 Kind cluster         → Kubernetes
 Flux CD / Argo       → deployment
