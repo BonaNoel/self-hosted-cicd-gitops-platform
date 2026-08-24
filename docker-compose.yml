@@ -1,0 +1,80 @@
+
+volumes:
+  gitea-data:
+  registry-data:
+  prometheus-data:
+  grafana-data:
+
+services:
+  gitea:
+    image: gitea/gitea:1.22
+    container_name: thesis-gitea
+    restart: unless-stopped
+    environment:
+      USER_UID: 1000
+      USER_GID: 1000
+      GITEA__database__DB_TYPE: sqlite3
+      GITEA__database__PATH: /data/gitea/gitea.db
+      GITEA__server__APP_DATA_PATH: /data/gitea
+      GITEA__server__DOMAIN: localhost
+      GITEA__server__ROOT_URL: http://localhost:3000/
+      GITEA__server__SSH_DOMAIN: localhost
+      GITEA__server__START_SSH_SERVER: true
+      GITEA__server__SSH_PORT: 2222
+      GITEA__service__DISABLE_REGISTRATION: false
+      GITEA__security__INSTALL_LOCK: false
+      GITEA__security__SECRET_KEY: changeme
+      GITEA__service__REQUIRE_SIGNIN_VIEW: false
+      GITEA__lfs__PATH: /data/gitea/lfs
+    ports:
+      - 3000:3000
+      - 2222:2222
+    volumes:
+      - gitea-data:/data
+    healthcheck:
+      test: [CMD, curl, -f, http://localhost:3000/api/healthz]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  registry:
+    image: registry:2
+    container_name: thesis-registry
+    restart: unless-stopped
+    ports:
+      - 5000:5000
+    volumes:
+      - registry-data:/var/lib/registry
+    healthcheck:
+      test: [CMD, wget, --spider, -q, http://localhost:5000/v2/]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: thesis-prometheus
+    restart: unless-stopped
+    ports:
+      - 9090:9090
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
+
+  grafana:
+    image: grafana/grafana-oss:11.2.0
+    container_name: thesis-grafana
+    restart: unless-stopped
+    ports:
+      - 3001:3000
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - grafana-data:/var/lib/grafana
+
