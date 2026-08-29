@@ -61,6 +61,7 @@ jobs:
 
       - name: Bump image tag in git (GitOps)
         run: |
+          apt-get update && apt-get install -y --no-install-recommends git
           git config user.name "gitea-actions-bot"
           git config user.email "actions@gitea.local"
           printf 'image:\n  tag: "%s"\n' "${{ gitea.sha }}" > apps/pipeline-pilot/helm/pipeline-pilot/image-tag.yaml
