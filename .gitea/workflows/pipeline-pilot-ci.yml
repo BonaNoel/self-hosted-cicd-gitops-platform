@@ -42,3 +42,4 @@ jobs:
         run: |
           docker push gitea.local/gitea_admin/pipeline-pilot:${{ gitea.sha }}
           docker push gitea.local/gitea_admin/pipeline-pilot:latest
+# retrigger: dind insecure-registry fix
