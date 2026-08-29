@@ -1,5 +1,2 @@
-# Image tag override, kept separate from values.yaml so CI can bump it without
-# retriggering the CI workflow itself (this path is excluded from the workflow's
-# path filter). Argo CD merges this on top of values.yaml.
 image:
-  tag: latest
+  tag: "46ae8e28ca4041c9907a129ee3a5ced7155fc3bf"
