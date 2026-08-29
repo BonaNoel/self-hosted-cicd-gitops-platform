@@ -60,11 +60,13 @@ jobs:
           docker push gitea.local/gitea_admin/pipeline-pilot:latest
 
       - name: Bump image tag in git (GitOps)
+        # actions/checkout downloads via the Gitea API (no real .git dir), so update the file via the Contents API instead of git commands
         run: |
-          apt-get update && apt-get install -y --no-install-recommends git
-          git config user.name "gitea-actions-bot"
-          git config user.email "actions@gitea.local"
-          printf 'image:\n  tag: "%s"\n' "${{ gitea.sha }}" > apps/pipeline-pilot/helm/pipeline-pilot/image-tag.yaml
-          git add apps/pipeline-pilot/helm/pipeline-pilot/image-tag.yaml
-          git commit -m "ci: deploy pipeline-pilot@${{ gitea.sha }}" || exit 0
-          git push "http://gitea_admin:${{ secrets.GIT_PUSH_TOKEN }}@gitea.local/gitea_admin/MSc-thesis.git" HEAD:${{ gitea.ref_name }}
+          CONTENT=$(printf 'image:\n  tag: "%s"\n' "${{ gitea.sha }}" | base64 -w0)
+          CURRENT_SHA=$(curl -sf -u "gitea_admin:${{ secrets.GIT_PUSH_TOKEN }}" \
+            "http://gitea.local/api/v1/repos/gitea_admin/MSc-thesis/contents/apps/pipeline-pilot/helm/pipeline-pilot/image-tag.yaml?ref=${{ gitea.ref_name }}" \
+            | python3 -c "import json,sys; print(json.load(sys.stdin)['sha'])")
+          curl -sf -u "gitea_admin:${{ secrets.GIT_PUSH_TOKEN }}" -X PUT \
+            "http://gitea.local/api/v1/repos/gitea_admin/MSc-thesis/contents/apps/pipeline-pilot/helm/pipeline-pilot/image-tag.yaml" \
+            -H "Content-Type: application/json" \
+            -d "{\"content\":\"$CONTENT\",\"sha\":\"$CURRENT_SHA\",\"branch\":\"${{ gitea.ref_name }}\",\"message\":\"ci: deploy pipeline-pilot@${{ gitea.sha }}\"}"
