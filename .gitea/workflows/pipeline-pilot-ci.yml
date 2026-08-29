@@ -18,6 +18,9 @@ jobs:
           distribution: temurin
           java-version: "21"
 
+      - name: Install Maven
+        run: apt-get update && apt-get install -y --no-install-recommends maven
+
       - name: Run tests
         working-directory: apps/pipeline-pilot
         run: mvn -B verify
