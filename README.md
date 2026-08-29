@@ -103,6 +103,29 @@ referenced by the Helm chart's `imagePullSecrets` (see
 - Verified working end-to-end: `mvn verify` → `docker build` → image pushed to
   `gitea.local/gitea_admin/pipeline-pilot` (tags `latest` and the commit SHA).
 
+### CD: Argo CD (GitOps)
+
+- `infra/argocd/` – Argo CD installed via Helm into its own `argocd`
+  namespace (`scripts/install-argocd.sh`), ingress at `argocd.local`, served
+  plain HTTP like the rest of the stack.
+- `infra/argocd/application-pipeline-pilot.yaml` – an `Application` watching
+  `apps/pipeline-pilot/helm/pipeline-pilot` on the `development` branch,
+  deployed to the `dev` namespace with automated sync, prune, and self-heal.
+- Closed-loop GitOps: after a successful image push, the CI workflow bumps
+  `apps/pipeline-pilot/helm/pipeline-pilot/image-tag.yaml` (a small
+  values-override file merged on top of `values.yaml`) with the new image
+  tag via Gitea's Contents API, and Argo CD picks up that commit
+  automatically. That file's path is excluded from the workflow's trigger
+  filter to avoid a build loop.
+- containerd on the kind node needs `config_path = "/etc/containerd/certs.d"`
+  (now in `kind/cluster-config.yaml`'s `containerdConfigPatches`) plus a
+  `hosts.toml` for `gitea.local` (written by `scripts/install-gitea.sh`) so
+  the kubelet can pull images from the registry over plain HTTP.
+- Add `127.0.0.1 argocd.local` to `/etc/hosts` (WSL and Windows, see the
+  Gitea section above), then browse to http://argocd.local. Get the initial
+  admin password with:
+  `kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d`
+
 ## Demo app endpoints
 
 The Spring Boot service exposes the following API endpoints:
