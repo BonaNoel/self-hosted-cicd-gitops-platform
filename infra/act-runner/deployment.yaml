@@ -59,7 +59,7 @@ spec:
             - name: GITEA_RUNNER_NAME
               value: kind-act-runner
             - name: GITEA_RUNNER_LABELS
-              value: "ubuntu-latest:docker://catthehacker/ubuntu:act-latest"
+              value: "ubuntu-latest:docker://node:20-bookworm-slim"
           volumeMounts:
             - name: docker-certs
               mountPath: /certs

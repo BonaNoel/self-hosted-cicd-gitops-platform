@@ -91,8 +91,8 @@ referenced by the Helm chart's `imagePullSecrets` (see
 
 - `infra/act-runner/` – `gitea/act_runner` + a privileged `docker:dind`
   sidecar, deployed into `mgmt` via `scripts/install-act-runner.sh`. Jobs run
-  in `catthehacker/ubuntu:act-latest` containers via the runner's Docker
-  connection to the sidecar.
+  in a slim `node:20-bookworm-slim` container (Maven/Docker CLI installed as
+  workflow steps) via the runner's Docker connection to the sidecar.
 - CoreDNS has a rewrite rule (`gitea.local` → `ingress-nginx-controller` in
   the `ingress-nginx` namespace) so `gitea.local` resolves the same way
   in-cluster (for the runner/checkout/registry) as it does on the host.

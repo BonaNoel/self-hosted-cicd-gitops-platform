@@ -31,6 +31,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install Docker CLI
+        run: apt-get update && apt-get install -y --no-install-recommends docker.io
+
       - name: Log in to Gitea container registry
         run: echo "${{ secrets.REGISTRY_PASSWORD }}" | docker login gitea.local -u "${{ secrets.REGISTRY_USERNAME }}" --password-stdin
 
@@ -42,4 +45,3 @@ jobs:
         run: |
           docker push gitea.local/gitea_admin/pipeline-pilot:${{ gitea.sha }}
           docker push gitea.local/gitea_admin/pipeline-pilot:latest
-# retrigger: dind insecure-registry fix
