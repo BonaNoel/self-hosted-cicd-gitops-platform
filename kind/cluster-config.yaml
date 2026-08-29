@@ -8,6 +8,11 @@ nodes:
         nodeRegistration:
           kubeletExtraArgs:
             node-labels: ingress-ready=true
+    # enables /etc/containerd/certs.d/<host>/hosts.toml overrides (e.g. treating gitea.local as plain HTTP)
+    containerdConfigPatches:
+      - |-
+        [plugins."io.containerd.grpc.v1.cri".registry]
+          config_path = "/etc/containerd/certs.d"
     extraPortMappings:
       - containerPort: 80
         hostPort: 80
