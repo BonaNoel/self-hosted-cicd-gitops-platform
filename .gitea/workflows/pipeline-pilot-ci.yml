@@ -34,8 +34,12 @@ jobs:
       - name: Install Docker CLI
         run: apt-get update && apt-get install -y --no-install-recommends docker.io
 
-      - name: Log in to Gitea container registry
-        run: echo "${{ secrets.REGISTRY_PASSWORD }}" | docker login gitea.local -u "${{ secrets.REGISTRY_USERNAME }}" --password-stdin
+      - name: Configure registry credentials
+        # `docker login` doesn't reliably honor daemon insecure-registries for TLS-mismatched hosts; write creds directly instead
+        run: |
+          mkdir -p ~/.docker
+          AUTH=$(printf '%s:%s' "${{ secrets.REGISTRY_USERNAME }}" "${{ secrets.REGISTRY_PASSWORD }}" | base64 -w0)
+          printf '{"auths":{"gitea.local":{"auth":"%s"}}}' "$AUTH" > ~/.docker/config.json
 
       - name: Build image
         working-directory: apps/pipeline-pilot
