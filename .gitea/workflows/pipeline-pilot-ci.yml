@@ -41,6 +41,14 @@ jobs:
           AUTH=$(printf '%s:%s' "${{ secrets.REGISTRY_USERNAME }}" "${{ secrets.REGISTRY_PASSWORD }}" | base64 -w0)
           printf '{"auths":{"gitea.local":{"auth":"%s"}}}' "$AUTH" > ~/.docker/config.json
 
+      - name: Pre-pull base images
+        # sequential `docker pull` is reliable here; BuildKit resolving all base images concurrently
+        # intermittently trips a TLS/cert mismatch over the WSL2/Docker Desktop NAT path
+        run: |
+          docker pull maven:3.9.9-eclipse-temurin-21-alpine
+          docker pull eclipse-temurin:21-jdk-alpine
+          docker pull alpine:3.21
+
       - name: Build image
         working-directory: apps/pipeline-pilot
         run: docker build -t gitea.local/gitea_admin/pipeline-pilot:${{ gitea.sha }} -t gitea.local/gitea_admin/pipeline-pilot:latest .
@@ -49,6 +57,3 @@ jobs:
         run: |
           docker push gitea.local/gitea_admin/pipeline-pilot:${{ gitea.sha }}
           docker push gitea.local/gitea_admin/pipeline-pilot:latest
-# retrigger: docker socket bind-mount fix
-# retrigger: verify transient TLS issue is resolved
-# retrigger: retry after confirming transient docker.io TLS flake
