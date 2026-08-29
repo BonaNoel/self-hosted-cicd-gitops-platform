@@ -62,10 +62,11 @@ jobs:
       - name: Bump image tag in git (GitOps)
         # actions/checkout downloads via the Gitea API (no real .git dir), so update the file via the Contents API instead of git commands
         run: |
+          apt-get update && apt-get install -y --no-install-recommends curl jq
           CONTENT=$(printf 'image:\n  tag: "%s"\n' "${{ gitea.sha }}" | base64 -w0)
           CURRENT_SHA=$(curl -sf -u "gitea_admin:${{ secrets.GIT_PUSH_TOKEN }}" \
             "http://gitea.local/api/v1/repos/gitea_admin/MSc-thesis/contents/apps/pipeline-pilot/helm/pipeline-pilot/image-tag.yaml?ref=${{ gitea.ref_name }}" \
-            | python3 -c "import json,sys; print(json.load(sys.stdin)['sha'])")
+            | jq -r '.sha')
           curl -sf -u "gitea_admin:${{ secrets.GIT_PUSH_TOKEN }}" -X PUT \
             "http://gitea.local/api/v1/repos/gitea_admin/MSc-thesis/contents/apps/pipeline-pilot/helm/pipeline-pilot/image-tag.yaml" \
             -H "Content-Type: application/json" \
