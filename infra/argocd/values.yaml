@@ -1,0 +1,39 @@
+# Argo CD Helm values, tuned for a single-node kind demo cluster.
+
+# global.domain is used to build default ingress host/redirect URLs
+global:
+  domain: argocd.local
+
+configs:
+  params:
+    # serve plain HTTP behind ingress-nginx (no TLS complexity, consistent with gitea.local/registry)
+    server.insecure: true
+
+server:
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    hostname: argocd.local
+    annotations:
+      nginx.ingress.kubernetes.io/proxy-body-size: "0"
+
+redis-ha:
+  enabled: false
+
+controller:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+
+repoServer:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi

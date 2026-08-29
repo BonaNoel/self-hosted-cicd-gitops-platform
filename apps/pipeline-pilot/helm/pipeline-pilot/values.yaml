@@ -2,8 +2,9 @@ replicaCount: 2
 
 image:
   repository: gitea.local/gitea_admin/pipeline-pilot
+  # tag is overridden by image-tag.yaml, which CI bumps on each successful build (GitOps source of truth)
   tag: latest
-  pullPolicy: Always
+  pullPolicy: IfNotPresent
 
 imagePullSecrets:
   - name: regcred

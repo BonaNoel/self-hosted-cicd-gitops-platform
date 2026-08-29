@@ -5,6 +5,7 @@ on:
     branches: ["**"]
     paths:
       - "apps/pipeline-pilot/**"
+      - "!apps/pipeline-pilot/helm/pipeline-pilot/image-tag.yaml"
       - ".gitea/workflows/pipeline-pilot-ci.yml"
 
 jobs:
@@ -57,3 +58,12 @@ jobs:
         run: |
           docker push gitea.local/gitea_admin/pipeline-pilot:${{ gitea.sha }}
           docker push gitea.local/gitea_admin/pipeline-pilot:latest
+
+      - name: Bump image tag in git (GitOps)
+        run: |
+          git config user.name "gitea-actions-bot"
+          git config user.email "actions@gitea.local"
+          printf 'image:\n  tag: "%s"\n' "${{ gitea.sha }}" > apps/pipeline-pilot/helm/pipeline-pilot/image-tag.yaml
+          git add apps/pipeline-pilot/helm/pipeline-pilot/image-tag.yaml
+          git commit -m "ci: deploy pipeline-pilot@${{ gitea.sha }}" || exit 0
+          git push "http://gitea_admin:${{ secrets.GIT_PUSH_TOKEN }}@gitea.local/gitea_admin/MSc-thesis.git" HEAD:${{ gitea.ref_name }}
