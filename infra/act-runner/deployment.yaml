@@ -1,3 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: act-runner-config
+  namespace: mgmt
+data:
+  config.yaml: |
+    container:
+      # bind-mount the dind engine's own socket into every job container (Docker-outside-of-Docker)
+      options: "-v /var/run/docker.sock:/var/run/docker.sock"
+      valid_volumes:
+        - "/var/run/docker.sock"
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -43,6 +56,8 @@ spec:
         - name: runner
           image: gitea/act_runner:0.2.11
           env:
+            - name: CONFIG_FILE
+              value: /config/config.yaml
             - name: DOCKER_HOST
               value: tcp://localhost:2376
             - name: DOCKER_CERT_PATH
@@ -65,6 +80,8 @@ spec:
               mountPath: /certs
             - name: runner-data
               mountPath: /data
+            - name: runner-config
+              mountPath: /config
           resources:
             requests:
               cpu: 100m
@@ -80,6 +97,9 @@ spec:
         - name: runner-data
           persistentVolumeClaim:
             claimName: act-runner-data
+        - name: runner-config
+          configMap:
+            name: act-runner-config
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
