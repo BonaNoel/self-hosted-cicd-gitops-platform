@@ -50,3 +50,4 @@ jobs:
           docker push gitea.local/gitea_admin/pipeline-pilot:${{ gitea.sha }}
           docker push gitea.local/gitea_admin/pipeline-pilot:latest
 # retrigger: docker socket bind-mount fix
+# retrigger: verify transient TLS issue is resolved
