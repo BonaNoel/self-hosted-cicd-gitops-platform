@@ -51,3 +51,4 @@ jobs:
           docker push gitea.local/gitea_admin/pipeline-pilot:latest
 # retrigger: docker socket bind-mount fix
 # retrigger: verify transient TLS issue is resolved
+# retrigger: retry after confirming transient docker.io TLS flake
