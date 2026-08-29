@@ -16,6 +16,10 @@ spec:
       labels:
         {{- include "pipeline-pilot.selectorLabels" . | nindent 8 }}
     spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: {{ include "pipeline-pilot.name" . }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"

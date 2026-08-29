@@ -24,6 +24,7 @@ The repository therefore combines three layers:
 ## Repository structure
 
 - `apps/pipeline-pilot/` – Spring Boot demo app, Helm chart, Dockerfile, and Kubernetes manifests
+- `infra/` – Helm values and notes for shared platform components (ingress-nginx, Gitea, ...)
 - `scripts/` – bootstrap and runtime helper scripts
 - `kind/` – local Kubernetes cluster definition
 - `observability/` – Prometheus and log/monitoring configuration files
@@ -49,6 +50,56 @@ This installs the following tools locally under `~/.local`:
 - kind
 - kubectl
 - Helm
+
+## Platform components (mgmt namespace)
+
+The kind cluster has `mgmt` (platform tooling) and `dev` (app workloads) namespaces.
+Install order so far:
+
+```bash
+./scripts/create-kind-cluster.sh
+./scripts/install-ingress-nginx.sh   # kind-specific ingress-nginx manifest
+./scripts/install-gitea.sh           # Helm install into mgmt namespace
+```
+
+- `infra/ingress-nginx/` – notes on the kind-provider ingress-nginx manifest used
+- `infra/gitea/values.yaml` – Helm values for `gitea-charts/gitea`, using SQLite
+  and in-process cache/queue/session backends (no Postgres/Redis) to keep the
+  local demo lightweight; Gitea Actions is enabled for a later CI step.
+
+Add `127.0.0.1 gitea.local` to `/etc/hosts`, then browse to http://gitea.local
+(admin login `gitea_admin` / `ChangeMe123!`, defined in `infra/gitea/values.yaml`).
+
+### Container registry
+
+Gitea's built-in OCI container registry (Packages feature) is used instead of a
+separate registry service - one less moving part, same auth/users. Images live
+at `gitea.local/<owner>/<image>:<tag>`.
+
+```bash
+docker login gitea.local -u gitea_admin -p 'ChangeMe123!'
+docker tag pipeline-pilot:latest gitea.local/gitea_admin/pipeline-pilot:latest
+docker push gitea.local/gitea_admin/pipeline-pilot:latest
+```
+
+In-cluster pulls authenticate via a `regcred` `docker-registry` Secret (created
+in the `mgmt` and `dev` namespaces from a `read:package`-scoped Gitea token),
+referenced by the Helm chart's `imagePullSecrets` (see
+`apps/pipeline-pilot/helm/pipeline-pilot/values.yaml`).
+
+### CI: Gitea Actions
+
+- `infra/act-runner/` – `gitea/act_runner` + a privileged `docker:dind`
+  sidecar, deployed into `mgmt` via `scripts/install-act-runner.sh`. Jobs run
+  in `catthehacker/ubuntu:act-latest` containers via the runner's Docker
+  connection to the sidecar.
+- CoreDNS has a rewrite rule (`gitea.local` → `ingress-nginx-controller` in
+  the `ingress-nginx` namespace) so `gitea.local` resolves the same way
+  in-cluster (for the runner/checkout/registry) as it does on the host.
+- Workflow: `.gitea/workflows/pipeline-pilot-ci.yml` - runs `mvn verify`, then
+  builds and pushes the image to the Gitea container registry on every push
+  touching `apps/pipeline-pilot/**`. Registry credentials are stored as
+  repo-level Actions secrets (`REGISTRY_USERNAME` / `REGISTRY_PASSWORD`).
 
 ## Demo app endpoints
 

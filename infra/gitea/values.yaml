@@ -1,0 +1,72 @@
+# Helm values for gitea-charts/gitea, tuned for a single-node kind cluster.
+# SQLite + in-process cache/queue avoid standing up Postgres/Redis for a local demo.
+
+replicaCount: 1
+
+strategy:
+  type: Recreate
+
+gitea:
+  admin:
+    username: gitea_admin
+    password: "ChangeMe123!"
+    email: "admin@thesis.local"
+  config:
+    server:
+      DOMAIN: gitea.local
+      ROOT_URL: http://gitea.local/
+      SSH_DOMAIN: gitea.local
+    database:
+      DB_TYPE: sqlite3
+    session:
+      PROVIDER: memory
+    cache:
+      ADAPTER: memory
+    queue:
+      TYPE: level
+    actions:
+      ENABLED: true
+
+# Bundled HA Postgres/Redis subcharts are not needed for sqlite3 + memory backends.
+postgresql:
+  enabled: false
+postgresql-ha:
+  enabled: false
+redis-cluster:
+  enabled: false
+valkey-cluster:
+  enabled: false
+
+persistence:
+  enabled: true
+  size: 5Gi
+  storageClassName: standard
+
+service:
+  http:
+    type: ClusterIP
+    port: 3000
+  ssh:
+    type: ClusterIP
+    port: 22
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    # image layer pushes to the Gitea container registry can exceed nginx's default 1m body limit
+    nginx.ingress.kubernetes.io/proxy-body-size: "0"
+  hosts:
+    - host: gitea.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi

@@ -1,9 +1,12 @@
 replicaCount: 2
 
 image:
-  repository: localhost:5000/pipeline-pilot
+  repository: gitea.local/gitea_admin/pipeline-pilot
   tag: latest
   pullPolicy: Always
+
+imagePullSecrets:
+  - name: regcred
 
 service:
   type: ClusterIP

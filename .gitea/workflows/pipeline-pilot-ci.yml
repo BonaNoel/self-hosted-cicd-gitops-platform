@@ -1,0 +1,41 @@
+name: pipeline-pilot CI
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "apps/pipeline-pilot/**"
+      - ".gitea/workflows/pipeline-pilot-ci.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Run tests
+        working-directory: apps/pipeline-pilot
+        run: mvn -B verify
+
+  build-and-push:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to Gitea container registry
+        run: echo "${{ secrets.REGISTRY_PASSWORD }}" | docker login gitea.local -u "${{ secrets.REGISTRY_USERNAME }}" --password-stdin
+
+      - name: Build image
+        working-directory: apps/pipeline-pilot
+        run: docker build -t gitea.local/gitea_admin/pipeline-pilot:${{ gitea.sha }} -t gitea.local/gitea_admin/pipeline-pilot:latest .
+
+      - name: Push image
+        run: |
+          docker push gitea.local/gitea_admin/pipeline-pilot:${{ gitea.sha }}
+          docker push gitea.local/gitea_admin/pipeline-pilot:latest
