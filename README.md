@@ -100,6 +100,8 @@ referenced by the Helm chart's `imagePullSecrets` (see
   builds and pushes the image to the Gitea container registry on every push
   touching `apps/pipeline-pilot/**`. Registry credentials are stored as
   repo-level Actions secrets (`REGISTRY_USERNAME` / `REGISTRY_PASSWORD`).
+- Verified working end-to-end: `mvn verify` → `docker build` → image pushed to
+  `gitea.local/gitea_admin/pipeline-pilot` (tags `latest` and the commit SHA).
 
 ## Demo app endpoints
 
