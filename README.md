@@ -51,24 +51,73 @@ This installs the following tools locally under `~/.local`:
 - kubectl
 - Helm
 
-## Platform components (mgmt namespace)
+## Current platform state
 
-The kind cluster has `mgmt` (platform tooling) and `dev` (app workloads) namespaces.
-Install order so far:
+The project is already running as a working self-hosted pipeline in the local kind cluster.
+The current environment includes the following components:
+
+- kind cluster with `mgmt` and `dev` namespaces
+- ingress-nginx for local host routing
+- Gitea as the Git server and package registry
+- Gitea Actions runners for CI automation
+- Argo CD for GitOps-driven deployment
+- the Spring Boot app deployed into the `dev` namespace
+- Metrics Server for Kubernetes resource metrics and HPA decisions
+- Prometheus and Grafana for metrics collection and visualization
+- Loki and Grafana Alloy for centralized Kubernetes log collection
+
+The base setup commands used are:
 
 ```bash
 ./scripts/create-kind-cluster.sh
-./scripts/install-ingress-nginx.sh   # kind-specific ingress-nginx manifest
-./scripts/install-gitea.sh           # Helm install into mgmt namespace
+./scripts/install-ingress-nginx.sh
+./scripts/install-gitea.sh
+./scripts/install-act-runner.sh
+./scripts/install-argocd.sh
+./scripts/install-observability.sh
 ```
 
 - `infra/ingress-nginx/` – notes on the kind-provider ingress-nginx manifest used
 - `infra/gitea/values.yaml` – Helm values for `gitea-charts/gitea`, using SQLite
   and in-process cache/queue/session backends (no Postgres/Redis) to keep the
-  local demo lightweight; Gitea Actions is enabled for a later CI step.
+  local demo lightweight; Gitea Actions is enabled for CI.
+- `infra/argocd/application-pipeline-pilot.yaml` – Argo CD `Application` that deploys
+  the application from the `development` branch into the `dev` namespace.
 
-Add `127.0.0.1 gitea.local` to `/etc/hosts`, then browse to http://gitea.local
-(admin login `gitea_admin` / `ChangeMe123!`, defined in `infra/gitea/values.yaml`).
+Add `127.0.0.1 gitea.local` and `127.0.0.1 argocd.local` to `/etc/hosts`, then browse to
+http://gitea.local and http://argocd.local.
+
+- Gitea admin login: `gitea_admin` / `ChangeMe123!` (defined in `infra/gitea/values.yaml`)
+- Argo CD admin password: `kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d`
+
+### Observability
+
+The observability stack runs in the `observability` namespace. Prometheus scrapes
+`pipeline-pilot.dev.svc.cluster.local:80/actuator/prometheus`; Loki receives Kubernetes
+container logs through Grafana Alloy; and Grafana provisions the `Pipeline Pilot Overview`
+dashboard from `infra/observability/pipeline-pilot-dashboard.yaml`.
+
+Add `127.0.0.1 grafana.local prometheus.local` to `/etc/hosts`, then browse to
+http://grafana.local or http://prometheus.local. Grafana login: `admin` / `ChangeMe123!`.
+
+Generate a short, repeatable in-cluster traffic sample for the dashboard with:
+
+```bash
+bash scripts/run-observability-traffic-test.sh
+```
+
+The default Job calls `/health`, `/users`, and `/simulate-load` thirty times and
+emits one log line per iteration. Metrics appear in Prometheus and the log lines
+appear in Grafana's `Development Workload Logs` panel.
+
+Configure an experiment through environment variables. `REQUESTS` controls the
+number of iterations; `CPU_MILLIS`, `IO_MILLIS`, and `COMPLEXITY` control the
+`/simulate-load` request; and `PAUSE_SECONDS` controls the pause between iterations.
+
+```bash
+REQUESTS=120 CPU_MILLIS=500 IO_MILLIS=50 COMPLEXITY=20000 PAUSE_SECONDS=0 \
+  bash scripts/run-observability-traffic-test.sh
+```
 
 ### Container registry
 
@@ -162,17 +211,22 @@ docker push localhost:5000/pipeline-pilot:latest
 This is the basic pattern that the thesis can use to demonstrate a self-hosted build-and-publish flow.
 
 
-## Thesis roadmap next steps
+## Completed implementation status
 
-The current repo establishes the foundation. The next implementation phases are:
+The repository already contains the implemented self-hosted delivery pipeline described in the thesis:
 
-1. Create the kind cluster, have a basic config for it which can be updates as needed.
-2. Install Gitea in kind, setup and wire in app repo.
-3. Come up with artifactory, where we can store built image so that is also self hosted.
-4. Create Gitea Actions CI (tests, image build, image publish).
-5. Add GitOps automation with Argo CD (and optionally Flux comparison).
-6. Add load generation and autoscaling scenarios to demonstrate scaling behavior.
-7. Connect obesrvability into the app stack and validate log collection.
+1. Local kind cluster for Kubernetes runtime
+2. Gitea hosting and built-in package registry
+3. Gitea Actions CI pipeline with tests, image build, and image push
+4. Argo CD GitOps deployment for the application
+5. Kubernetes deployment of the sample Spring Boot service
+6. Local ingress and host routing for internal services
+
+The remaining work is focused on extension and validation rather than initial setup, such as:
+
+- load generation and autoscaling scenarios,
+- observability validation and dashboards,
+- final documentation refinement for the thesis narrative.
 
 ## Useful references
 
