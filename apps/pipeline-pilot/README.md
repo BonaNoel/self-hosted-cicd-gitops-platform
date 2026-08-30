@@ -26,40 +26,37 @@ mvn clean package
 ## Build image
 
 ```bash
-docker build -t localhost:5000/pipeline-pilot:latest .
-docker push localhost:5000/pipeline-pilot:latest
+docker build -t pipeline-pilot:local .
 ```
 
-## Deploy to Kubernetes with Helm
+## Manual registry test
+
+The normal image build and push path is the Gitea Actions workflow. To test the
+Gitea registry manually, use a Gitea account or token with package write access:
 
 ```bash
-helm upgrade --install pipeline-pilot ./helm/pipeline-pilot \
-	--set image.repository=localhost:5000/pipeline-pilot \
-	--set image.tag=latest
+docker login gitea.local -u gitea_admin
+docker tag pipeline-pilot:local gitea.local/gitea_admin/pipeline-pilot:manual
+docker push gitea.local/gitea_admin/pipeline-pilot:manual
 ```
 
-Check rendered manifests before deploy:
+## Helm deployment model
+
+Argo CD deploys this chart automatically from the `development` branch. Check
+the rendered manifests locally before changing Helm values:
 
 ```bash
 helm template pipeline-pilot ./helm/pipeline-pilot
 ```
 
-## Optional: raw Kubernetes YAML
+The CI workflow updates `helm/pipeline-pilot/image-tag.yaml` after it publishes
+an image. Argo CD then synchronizes that image tag into the `dev` namespace.
 
-```bash
-kubectl apply -f k8s/deployment.yaml
-kubectl apply -f k8s/service.yaml
-kubectl apply -f k8s/hpa.yaml
-```
-
-## Example load simulation calls
+## Load simulation
 
 ```bash
 curl "http://localhost:8080/simulate-load?cpuMillis=1500&ioMillis=500&complexity=15000"
 ```
 
-For higher sustained load, use `hey`:
-
-```bash
-hey -n 2000 -c 50 "http://localhost:8080/simulate-load?cpuMillis=300&ioMillis=50&complexity=8000"
-```
+For the cluster-wide observability experiment, use the configurable traffic
+runner from the repository root: `bash scripts/run-observability-traffic-test.sh`.

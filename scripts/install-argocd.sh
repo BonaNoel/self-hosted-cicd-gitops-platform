@@ -14,6 +14,7 @@ kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -
 
 helm upgrade --install argocd argo/argo-cd \
   --namespace "$NAMESPACE" \
+  --version 10.4.2 \
   --values "$REPO_ROOT/infra/argocd/values.yaml" \
   --wait --timeout 5m
 

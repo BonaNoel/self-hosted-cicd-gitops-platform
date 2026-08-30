@@ -34,22 +34,72 @@ The repository therefore combines three layers:
 
 ## Bootstrapping the developer toolchain
 
-From the repo root:
+The installation scripts support Linux x86_64 and require Docker Engine or Docker
+Desktop, `curl`, `tar`, and access to the local Docker daemon. The bootstrap script
+installs Java 21, Maven, kind, kubectl, and Helm in `~/.local` without modifying
+your shell configuration.
+
+From the repository root:
 
 ```bash
-cd <repo-root>
-chmod +x scripts/*.sh
-./scripts/bootstrap-local.sh
-source ~/.bashrc
+bash scripts/bootstrap-local.sh
 ```
 
-This installs the following tools locally under `~/.local`:
+For Bash or Zsh, make the tools available in the current shell:
 
-- Java 21
-- Maven
-- kind
-- kubectl
-- Helm
+```bash
+export PATH="$HOME/.local/jdk/bin:$HOME/.local/apache-maven/bin:$HOME/.local/bin:$PATH"
+```
+
+For Fish:
+
+```fish
+set -gx PATH "$HOME/.local/jdk/bin" "$HOME/.local/apache-maven/bin" "$HOME/.local/bin" $PATH
+```
+
+## Fresh local installation
+
+Run the following scripts in order. Every Helm chart version is pinned to the
+version validated by this repository.
+
+```bash
+bash scripts/create-kind-cluster.sh
+bash scripts/install-ingress-nginx.sh
+bash scripts/install-gitea.sh
+```
+
+Add these local host names before accessing Gitea or installing the Actions runner:
+
+```text
+127.0.0.1 gitea.local argocd.local grafana.local prometheus.local
+```
+
+On WSL, update both the WSL `/etc/hosts` file and the Windows hosts file so that
+browser access resolves correctly. Then install the remaining platform services:
+
+```bash
+bash scripts/install-act-runner.sh
+bash scripts/install-argocd.sh
+bash scripts/install-observability.sh
+```
+
+Create a Gitea repository named `MSc-thesis` under `gitea_admin`, push the
+`development` branch to it, and configure the Actions secrets below before applying
+the Argo CD application:
+
+- `REGISTRY_USERNAME` and `REGISTRY_PASSWORD`: Gitea package credentials
+- `GIT_PUSH_TOKEN`: a Gitea token with repository write access, used to update the image tag
+
+Create the `regcred` image-pull secret in the `dev` namespace with a Gitea token
+that has `read:package` permission, then apply the GitOps application:
+
+```bash
+kubectl create secret docker-registry regcred --namespace dev \
+  --docker-server=gitea.local \
+  --docker-username=gitea_admin \
+  --docker-password='<read-package-token>'
+kubectl apply -f infra/argocd/application-pipeline-pilot.yaml
+```
 
 ## Current platform state
 
@@ -201,14 +251,16 @@ Build the application image locally:
 docker build -t pipeline-pilot:local ./apps/pipeline-pilot
 ```
 
-Push it to the local registry:
+For a manual registry test, authenticate and push to the Gitea registry:
 
 ```bash
-docker tag pipeline-pilot:local localhost:5000/pipeline-pilot:latest
-docker push localhost:5000/pipeline-pilot:latest
+docker login gitea.local -u gitea_admin
+docker tag pipeline-pilot:local gitea.local/gitea_admin/pipeline-pilot:manual
+docker push gitea.local/gitea_admin/pipeline-pilot:manual
 ```
 
-This is the basic pattern that the thesis can use to demonstrate a self-hosted build-and-publish flow.
+Normal deployments should be performed through a Git push so Gitea Actions builds,
+tags, and publishes the image before Argo CD synchronizes the Helm release.
 
 
 ## Completed implementation status

@@ -16,16 +16,19 @@ helm repo update >/dev/null
 
 helm upgrade --install metrics-server metrics-server/metrics-server \
   --namespace kube-system \
+  --version 3.14.0 \
   --set args[0]=--kubelet-insecure-tls \
   --wait --timeout 5m
 
 helm upgrade --install monitoring prometheus-community/kube-prometheus-stack \
   --namespace "$NAMESPACE" \
+  --version 88.6.1 \
   --values "$REPO_ROOT/infra/observability/kube-prometheus-stack-values.yaml" \
   --wait --timeout 10m
 
 helm upgrade --install loki grafana/loki \
   --namespace "$NAMESPACE" \
+  --version 7.3.0 \
   --values "$REPO_ROOT/infra/observability/loki-values.yaml" \
   --wait --timeout 5m
 
