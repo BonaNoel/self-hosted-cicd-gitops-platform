@@ -60,3 +60,4 @@ curl "http://localhost:8080/simulate-load?cpuMillis=1500&ioMillis=500&complexity
 
 For the cluster-wide observability experiment, use the configurable traffic
 runner from the repository root: `bash scripts/run-observability-traffic-test.sh`.
+Its Kubernetes Job manifest is at `traffic-test/job.yaml`.

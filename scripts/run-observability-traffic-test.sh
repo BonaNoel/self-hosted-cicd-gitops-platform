@@ -40,7 +40,7 @@ if (( COMPLEXITY < 100 )); then
 fi
 
 kubectl delete job "$JOB_NAME" --namespace "$NAMESPACE" --ignore-not-found
-kubectl create --dry-run=client -o yaml -f "$REPO_ROOT/observability/pipeline-pilot-traffic-job.yaml" \
+kubectl create --dry-run=client -o yaml -f "$REPO_ROOT/apps/pipeline-pilot/traffic-test/job.yaml" \
 	| kubectl set env --local -f - -o yaml \
 		"REQUESTS=$REQUESTS" \
 		"CPU_MILLIS=$CPU_MILLIS" \

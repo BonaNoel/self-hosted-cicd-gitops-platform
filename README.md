@@ -23,11 +23,10 @@ The repository therefore combines three layers:
 
 ## Repository structure
 
-- `apps/pipeline-pilot/` – Spring Boot demo app, Helm chart, Dockerfile, and Kubernetes manifests
-- `infra/` – Helm values and notes for shared platform components (ingress-nginx, Gitea, ...)
+- `apps/pipeline-pilot/` – Spring Boot demo app, Helm chart, Dockerfile, and traffic-test Job
+- `infra/` – shared platform configuration for ingress-nginx, Gitea, Argo CD, and observability
 - `scripts/` – bootstrap and runtime helper scripts
 - `kind/` – local Kubernetes cluster definition
-- `observability/` – Prometheus and log/monitoring configuration files
 - `plan.txt` – original thesis plan and architecture notes
 - `LICENSE` – project license
 
@@ -156,9 +155,10 @@ Generate a short, repeatable in-cluster traffic sample for the dashboard with:
 bash scripts/run-observability-traffic-test.sh
 ```
 
-The default Job calls `/health`, `/users`, and `/simulate-load` thirty times and
-emits one log line per iteration. Metrics appear in Prometheus and the log lines
-appear in Grafana's `Development Workload Logs` panel.
+The default Job at `apps/pipeline-pilot/traffic-test/job.yaml` calls `/health`,
+`/users`, and `/simulate-load` thirty times and emits one log line per iteration.
+Metrics appear in Prometheus and the log lines appear in Grafana's `Development
+Workload Logs` panel.
 
 Configure an experiment through environment variables. `REQUESTS` controls the
 number of iterations; `CPU_MILLIS`, `IO_MILLIS`, and `COMPLEXITY` control the
