@@ -35,6 +35,7 @@ helm upgrade --install loki grafana/loki \
 kubectl apply -f "$REPO_ROOT/infra/observability/alloy.yaml"
 kubectl rollout status daemonset/alloy --namespace "$NAMESPACE" --timeout=5m
 kubectl apply -f "$REPO_ROOT/infra/observability/pipeline-pilot-dashboard.yaml"
+kubectl apply -f "$REPO_ROOT/infra/observability/pipeline-pilot-alerts.yaml"
 
 echo
 printf 'Observability stack installed.\n'

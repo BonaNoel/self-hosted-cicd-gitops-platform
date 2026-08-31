@@ -20,6 +20,47 @@ The repository therefore combines three layers:
 2. local infrastructure for CI/CD and observability,
 3. documentation and deployment steps for repeatable thesis use.
 
+## Architecture
+
+```mermaid
+flowchart LR
+    Dev[Developer] -->|git push| Gitea[Gitea\nGit + Registry]
+    Gitea -->|triggers| Actions[Gitea Actions\nact_runner]
+    Actions -->|build + push image| Registry[(Gitea Container\nRegistry)]
+    Actions -->|update image-tag.yaml| Gitea
+    ArgoCD[Argo CD] -->|watches development branch| Gitea
+    ArgoCD -->|sync| K8s[Kubernetes / kind\ndev namespace]
+    Registry -->|image pull| K8s
+    K8s -->|scrape /actuator/prometheus| Prometheus[Prometheus]
+    K8s -->|container logs| Alloy[Grafana Alloy]
+    Alloy --> Loki[Loki]
+    Prometheus --> Grafana[Grafana]
+    Loki --> Grafana
+    HPA[HorizontalPodAutoscaler] -.->|scales| K8s
+    Prometheus -.->|resource metrics via\nMetrics Server| HPA
+```
+
+## CI/CD Delivery Flow
+
+```mermaid
+sequenceDiagram
+    participant Dev as Developer
+    participant Gitea as Gitea
+    participant CI as Gitea Actions
+    participant Reg as Container Registry
+    participant Argo as Argo CD
+    participant K8s as Kubernetes (dev)
+
+    Dev->>Gitea: git push (development branch)
+    Gitea->>CI: trigger workflow
+    CI->>CI: mvn verify
+    CI->>Reg: docker build + push (tag = commit SHA)
+    CI->>Gitea: update image-tag.yaml via Contents API
+    Argo->>Gitea: poll for changes
+    Argo->>K8s: sync Helm release with new image tag
+    K8s->>Reg: pull image
+    K8s-->>Argo: report Synced / Healthy
+```
 
 ## Repository structure
 
@@ -27,6 +68,7 @@ The repository therefore combines three layers:
 - `infra/` – shared platform configuration for ingress-nginx, Gitea, Argo CD, and observability
 - `scripts/` – bootstrap and runtime helper scripts
 - `kind/` – local Kubernetes cluster definition
+- `docs/thesis-demo-scenarios.md` – step-by-step experiments to run and record for the thesis
 - `plan.txt` – original thesis plan and architecture notes
 - `LICENSE` – project license
 
@@ -161,13 +203,47 @@ Metrics appear in Prometheus and the log lines appear in Grafana's `Development
 Workload Logs` panel.
 
 Configure an experiment through environment variables. `REQUESTS` controls the
-number of iterations; `CPU_MILLIS`, `IO_MILLIS`, and `COMPLEXITY` control the
-`/simulate-load` request; and `PAUSE_SECONDS` controls the pause between iterations.
+number of iterations per worker; `CPU_MILLIS`, `IO_MILLIS`, and `COMPLEXITY` control
+the `/simulate-load` request; `PAUSE_SECONDS` controls the pause between iterations;
+and `WORKERS` controls how many pods run in parallel (each a separate Job
+completion), so total requests issued = `WORKERS` × `REQUESTS`.
 
 ```bash
 REQUESTS=120 CPU_MILLIS=500 IO_MILLIS=50 COMPLEXITY=20000 PAUSE_SECONDS=0 \
   bash scripts/run-observability-traffic-test.sh
 ```
+
+To reliably trigger HPA scale-out, run enough concurrent load to push CPU
+utilization above the 60% target for a sustained period:
+
+```bash
+WORKERS=8 REQUESTS=200 CPU_MILLIS=600 IO_MILLIS=25 COMPLEXITY=20000 PAUSE_SECONDS=0 \
+  bash scripts/run-observability-traffic-test.sh
+```
+
+Watch `kubectl get hpa -n dev -w` or the `HPA Current and Desired Replicas`
+Grafana panel while it runs. After the Job completes, replicas scale back down
+once the HPA's stabilization window elapses.
+
+### Alerting
+
+`infra/observability/pipeline-pilot-alerts.yaml` defines a `PrometheusRule` picked
+up automatically by the Prometheus Operator (label `release: monitoring`). It
+covers:
+
+- `PipelinePilotDown` – the Prometheus target is unreachable for 2 minutes
+- `PipelinePilotHighLatency` – average HTTP latency exceeds 1s for 5 minutes
+- `PipelinePilotHighCPUUtilization` – CPU exceeds 90% of requested CPU for 5
+  minutes, i.e. close to the HPA's scaling ceiling
+- `PipelinePilotDeploymentUnavailable` – available replicas stay below desired
+  for 5 minutes
+- `PipelinePilotContainerRestarting` – any container restart in the last 15
+  minutes
+
+Alerts are visible in Prometheus (`http://prometheus.local/alerts`) and
+Alertmanager, and firing alerts also surface in Grafana's Alerting view. The
+default Alertmanager route has no external notification channel configured
+(local demo), so alerts are evidence of detection, not paging.
 
 ### Container registry
 

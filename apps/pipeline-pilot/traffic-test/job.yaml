@@ -9,6 +9,8 @@ metadata:
 spec:
   backoffLimit: 0
   ttlSecondsAfterFinished: 600
+  parallelism: 1
+  completions: 1
   template:
     metadata:
       labels:
@@ -39,7 +41,7 @@ spec:
                 curl -fsS http://pipeline-pilot.dev.svc.cluster.local/health >/dev/null
                 curl -fsS http://pipeline-pilot.dev.svc.cluster.local/users >/dev/null
                 curl -fsS "http://pipeline-pilot.dev.svc.cluster.local/simulate-load?cpuMillis=$CPU_MILLIS&ioMillis=$IO_MILLIS&complexity=$COMPLEXITY" >/dev/null
-                printf 'traffic iteration=%s target=pipeline-pilot cpuMillis=%s ioMillis=%s complexity=%s result=success\n' "$attempt" "$CPU_MILLIS" "$IO_MILLIS" "$COMPLEXITY"
+                printf 'traffic iteration=%s worker=%s target=pipeline-pilot cpuMillis=%s ioMillis=%s complexity=%s result=success\n' "$attempt" "$HOSTNAME" "$CPU_MILLIS" "$IO_MILLIS" "$COMPLEXITY"
                 attempt=$((attempt + 1))
                 sleep "$PAUSE_SECONDS"
               done
