@@ -1,0 +1,114 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: act-runner-config
+  namespace: mgmt
+data:
+  config.yaml: |
+    container:
+      # bind-mount the dind engine's own socket into every job container (Docker-outside-of-Docker)
+      options: "-v /var/run/docker.sock:/var/run/docker.sock"
+      valid_volumes:
+        - "/var/run/docker.sock"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: act-runner
+  namespace: mgmt
+  labels:
+    app: act-runner
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: act-runner
+  template:
+    metadata:
+      labels:
+        app: act-runner
+    spec:
+      containers:
+        - name: dind
+          image: docker:27-dind
+          securityContext:
+            privileged: true
+          # gitea.local is served over plain HTTP behind ingress-nginx's self-signed cert (wrong CN for HTTPS probing)
+          args:
+            - "--insecure-registry=gitea.local"
+          env:
+            - name: DOCKER_TLS_CERTDIR
+              value: /certs
+          volumeMounts:
+            - name: docker-certs
+              mountPath: /certs
+            - name: dind-storage
+              mountPath: /var/lib/docker
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+        - name: runner
+          image: gitea/act_runner:0.2.11
+          env:
+            - name: CONFIG_FILE
+              value: /config/config.yaml
+            - name: DOCKER_HOST
+              value: tcp://localhost:2376
+            - name: DOCKER_CERT_PATH
+              value: /certs/client
+            - name: DOCKER_TLS_VERIFY
+              value: "1"
+            - name: GITEA_INSTANCE_URL
+              value: http://gitea.local
+            - name: GITEA_RUNNER_REGISTRATION_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: act-runner-registration
+                  key: token
+            - name: GITEA_RUNNER_NAME
+              value: kind-act-runner
+            - name: GITEA_RUNNER_LABELS
+              value: "ubuntu-latest:docker://node:20-bookworm-slim"
+          volumeMounts:
+            - name: docker-certs
+              mountPath: /certs
+            - name: runner-data
+              mountPath: /data
+            - name: runner-config
+              mountPath: /config
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+      volumes:
+        - name: docker-certs
+          emptyDir: {}
+        - name: dind-storage
+          emptyDir: {}
+        - name: runner-data
+          persistentVolumeClaim:
+            claimName: act-runner-data
+        - name: runner-config
+          configMap:
+            name: act-runner-config
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: act-runner-data
+  namespace: mgmt
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: standard
+  resources:
+    requests:
+      storage: 1Gi

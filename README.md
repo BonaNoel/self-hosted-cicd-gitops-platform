@@ -20,130 +20,286 @@ The repository therefore combines three layers:
 2. local infrastructure for CI/CD and observability,
 3. documentation and deployment steps for repeatable thesis use.
 
-## Architecture at a glance
+## Architecture
 
-The intended pipeline architecture is:
+```mermaid
+flowchart LR
+    Dev[Developer] -->|git push| Gitea[Gitea\nGit + Registry]
+    Gitea -->|triggers| Actions[Gitea Actions\nact_runner]
+    Actions -->|build + push image| Registry[(Gitea Container\nRegistry)]
+    Actions -->|update image-tag.yaml| Gitea
+    ArgoCD[Argo CD] -->|watches development branch| Gitea
+    ArgoCD -->|sync| K8s[Kubernetes / kind\ndev namespace]
+    Registry -->|image pull| K8s
+    K8s -->|scrape /actuator/prometheus| Prometheus[Prometheus]
+    K8s -->|container logs| Alloy[Grafana Alloy]
+    Alloy --> Loki[Loki]
+    Prometheus --> Grafana[Grafana]
+    Loki --> Grafana
+    HPA[HorizontalPodAutoscaler] -.->|scales| K8s
+    Prometheus -.->|resource metrics via\nMetrics Server| HPA
+```
 
-Developer -> Gitea -> Woodpecker CI -> Docker Registry -> kind/Kubernetes -> Observability stack
+## CI/CD Delivery Flow
 
-The local baseline currently includes the following working pieces:
+```mermaid
+sequenceDiagram
+    participant Dev as Developer
+    participant Gitea as Gitea
+    participant CI as Gitea Actions
+    participant Reg as Container Registry
+    participant Argo as Argo CD
+    participant K8s as Kubernetes (dev)
 
-- Gitea: Git hosting and repository management
-- Docker Registry: private image registry for local build artifacts
-- Prometheus: metrics collection
-- Grafana: dashboards and observability visualization
-- Spring Boot demo app: `pipeline-pilot`
-
-The full target architecture includes the following next-stage components:
-
-- Woodpecker CI for pipeline orchestration
-- kind cluster for local Kubernetes execution
-- Flux or Argo CD for GitOps-style deployment
-- Loki and Promtail for centralized log collection
-- load generation and scaling validation scenarios for the thesis
+    Dev->>Gitea: git push (development branch)
+    Gitea->>CI: trigger workflow
+    CI->>CI: mvn verify
+    CI->>Reg: docker build + push (tag = commit SHA)
+    CI->>Gitea: update image-tag.yaml via Contents API
+    Argo->>Gitea: poll for changes
+    Argo->>K8s: sync Helm release with new image tag
+    K8s->>Reg: pull image
+    K8s-->>Argo: report Synced / Healthy
+```
 
 ## Repository structure
 
-- `apps/pipeline-pilot/` – Spring Boot demo app, Helm chart, Dockerfile, and Kubernetes manifests
+- `apps/pipeline-pilot/` – Spring Boot demo app, Helm chart, Dockerfile, and traffic-test Job
+- `infra/` – shared platform configuration for ingress-nginx, Gitea, Argo CD, and observability
 - `scripts/` – bootstrap and runtime helper scripts
 - `kind/` – local Kubernetes cluster definition
-- `observability/` – Prometheus, Loki, and Promtail configuration files
-- `docker-compose.yml` – local baseline Docker services
+- `docs/thesis-demo-scenarios.md` – step-by-step experiments to run and record for the thesis
 - `plan.txt` – original thesis plan and architecture notes
 - `LICENSE` – project license
 
-## Local prerequisite stack
-
-You need the following installed on the machine that is running WSL:
-
-- WSL2 with Ubuntu 22.04+
-- Git
-- Docker Desktop with WSL integration enabled
-- Internet access for downloading toolchains and container images
-
-Important: Docker Desktop is required for the local container and kind workflow. The bootstrap script installs the Java/Maven/Kubernetes toolchain inside WSL, but the Docker engine still has to be available from WSL through Docker Desktop.
 
 ## Bootstrapping the developer toolchain
 
-From the repo root:
+The installation scripts support Linux x86_64 and require Docker Engine or Docker
+Desktop, `curl`, `tar`, and access to the local Docker daemon. The bootstrap script
+installs Java 21, Maven, kind, kubectl, and Helm in `~/.local` without modifying
+your shell configuration.
+
+From the repository root:
 
 ```bash
-cd <repo-root>
-chmod +x scripts/*.sh
-./scripts/bootstrap-local.sh
-source ~/.bashrc
+bash scripts/bootstrap-local.sh
 ```
 
-This installs the following tools locally under `~/.local`:
-
-- Java 21
-- Maven
-- kind
-- kubectl
-- Helm
-
-## Starting the local infrastructure baseline
-
-The repo includes a stable local baseline that is useful for the thesis environment before deeper CI/CD automation is added:
+For Bash or Zsh, make the tools available in the current shell:
 
 ```bash
-cd <repo-root>
-./scripts/start-local-stack.sh
+export PATH="$HOME/.local/jdk/bin:$HOME/.local/apache-maven/bin:$HOME/.local/bin:$PATH"
 ```
 
-The services started by this script include:
+For Fish:
 
-- Gitea: http://localhost:3000
-- Docker Registry: http://localhost:5000/v2/
-- Prometheus: http://localhost:9090
-- Grafana: http://localhost:3001
+```fish
+set -gx PATH "$HOME/.local/jdk/bin" "$HOME/.local/apache-maven/bin" "$HOME/.local/bin" $PATH
+```
 
-To stop the stack:
+## Fresh local installation
+
+Run the following scripts in order. Every Helm chart version is pinned to the
+version validated by this repository.
 
 ```bash
-./scripts/stop-local-stack.sh
+bash scripts/create-kind-cluster.sh
+bash scripts/install-ingress-nginx.sh
+bash scripts/install-gitea.sh
 ```
 
-If you call scripts with `sh` by habit, these scripts now re-run themselves with Bash automatically.
+Add these local host names before accessing Gitea or installing the Actions runner:
 
-If Docker access fails with `permission denied while trying to connect to the docker API at unix:///var/run/docker.sock`:
+```text
+127.0.0.1 gitea.local argocd.local grafana.local prometheus.local
+```
 
-- make sure Docker Desktop is running,
-- verify WSL integration is enabled for your distro in Docker Desktop,
-- and check your current user can access `/var/run/docker.sock`.
-
-When you first open Gitea, complete the setup wizard and create an admin account. The initial stack is intentionally left in a ready-to-configure state.
-
-## Building and testing the demo app
-
-### Run unit/integration tests
+On WSL, update both the WSL `/etc/hosts` file and the Windows hosts file so that
+browser access resolves correctly. Then install the remaining platform services:
 
 ```bash
-cd <repo-root>
-./scripts/test-demo.sh
+bash scripts/install-act-runner.sh
+bash scripts/install-argocd.sh
+bash scripts/install-observability.sh
 ```
 
-### Build the application JAR
+Create a Gitea repository named `MSc-thesis` under `gitea_admin`, push the
+`development` branch to it, and configure the Actions secrets below before applying
+the Argo CD application:
+
+- `REGISTRY_USERNAME` and `REGISTRY_PASSWORD`: Gitea package credentials
+- `GIT_PUSH_TOKEN`: a Gitea token with repository write access, used to update the image tag
+
+Create the `regcred` image-pull secret in the `dev` namespace with a Gitea token
+that has `read:package` permission, then apply the GitOps application:
 
 ```bash
-cd <repo-root>/apps/pipeline-pilot
-mvn clean package
+kubectl create secret docker-registry regcred --namespace dev \
+  --docker-server=gitea.local \
+  --docker-username=gitea_admin \
+  --docker-password='<read-package-token>'
+kubectl apply -f infra/argocd/application-pipeline-pilot.yaml
 ```
 
-### Run the application locally
+## Current platform state
+
+The project is already running as a working self-hosted pipeline in the local kind cluster.
+The current environment includes the following components:
+
+- kind cluster with `mgmt` and `dev` namespaces
+- ingress-nginx for local host routing
+- Gitea as the Git server and package registry
+- Gitea Actions runners for CI automation
+- Argo CD for GitOps-driven deployment
+- the Spring Boot app deployed into the `dev` namespace
+- Metrics Server for Kubernetes resource metrics and HPA decisions
+- Prometheus and Grafana for metrics collection and visualization
+- Loki and Grafana Alloy for centralized Kubernetes log collection
+
+The base setup commands used are:
 
 ```bash
-cd <repo-root>
-./scripts/run-demo.sh
+./scripts/create-kind-cluster.sh
+./scripts/install-ingress-nginx.sh
+./scripts/install-gitea.sh
+./scripts/install-act-runner.sh
+./scripts/install-argocd.sh
+./scripts/install-observability.sh
 ```
 
-The application listens on port 8080 by default. You can check the health endpoint:
+- `infra/ingress-nginx/` – notes on the kind-provider ingress-nginx manifest used
+- `infra/gitea/values.yaml` – Helm values for `gitea-charts/gitea`, using SQLite
+  and in-process cache/queue/session backends (no Postgres/Redis) to keep the
+  local demo lightweight; Gitea Actions is enabled for CI.
+- `infra/argocd/application-pipeline-pilot.yaml` – Argo CD `Application` that deploys
+  the application from the `development` branch into the `dev` namespace.
+
+Add `127.0.0.1 gitea.local` and `127.0.0.1 argocd.local` to `/etc/hosts`, then browse to
+http://gitea.local and http://argocd.local.
+
+- Gitea admin login: `gitea_admin` / `ChangeMe123!` (defined in `infra/gitea/values.yaml`)
+- Argo CD admin password: `kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d`
+
+### Observability
+
+The observability stack runs in the `observability` namespace. Prometheus scrapes
+`pipeline-pilot.dev.svc.cluster.local:80/actuator/prometheus`; Loki receives Kubernetes
+container logs through Grafana Alloy; and Grafana provisions the `Pipeline Pilot Overview`
+dashboard from `infra/observability/pipeline-pilot-dashboard.yaml`.
+
+Add `127.0.0.1 grafana.local prometheus.local` to `/etc/hosts`, then browse to
+http://grafana.local or http://prometheus.local. Grafana login: `admin` / `ChangeMe123!`.
+
+Generate a short, repeatable in-cluster traffic sample for the dashboard with:
 
 ```bash
-curl http://localhost:8080/health
-curl http://localhost:8080/users
-curl "http://localhost:8080/simulate-load?cpuMillis=250&ioMillis=100&complexity=5000"
+bash scripts/run-observability-traffic-test.sh
 ```
+
+The default Job at `apps/pipeline-pilot/traffic-test/job.yaml` calls `/health`,
+`/users`, and `/simulate-load` thirty times and emits one log line per iteration.
+Metrics appear in Prometheus and the log lines appear in Grafana's `Development
+Workload Logs` panel.
+
+Configure an experiment through environment variables. `REQUESTS` controls the
+number of iterations per worker; `CPU_MILLIS`, `IO_MILLIS`, and `COMPLEXITY` control
+the `/simulate-load` request; `PAUSE_SECONDS` controls the pause between iterations;
+and `WORKERS` controls how many pods run in parallel (each a separate Job
+completion), so total requests issued = `WORKERS` × `REQUESTS`.
+
+```bash
+REQUESTS=120 CPU_MILLIS=500 IO_MILLIS=50 COMPLEXITY=20000 PAUSE_SECONDS=0 \
+  bash scripts/run-observability-traffic-test.sh
+```
+
+To reliably trigger HPA scale-out, run enough concurrent load to push CPU
+utilization above the 60% target for a sustained period:
+
+```bash
+WORKERS=8 REQUESTS=200 CPU_MILLIS=600 IO_MILLIS=25 COMPLEXITY=20000 PAUSE_SECONDS=0 \
+  bash scripts/run-observability-traffic-test.sh
+```
+
+Watch `kubectl get hpa -n dev -w` or the `HPA Current and Desired Replicas`
+Grafana panel while it runs. After the Job completes, replicas scale back down
+once the HPA's stabilization window elapses.
+
+### Alerting
+
+`infra/observability/pipeline-pilot-alerts.yaml` defines a `PrometheusRule` picked
+up automatically by the Prometheus Operator (label `release: monitoring`). It
+covers:
+
+- `PipelinePilotDown` – the Prometheus target is unreachable for 2 minutes
+- `PipelinePilotHighLatency` – average HTTP latency exceeds 1s for 5 minutes
+- `PipelinePilotHighCPUUtilization` – CPU exceeds 90% of requested CPU for 5
+  minutes, i.e. close to the HPA's scaling ceiling
+- `PipelinePilotDeploymentUnavailable` – available replicas stay below desired
+  for 5 minutes
+- `PipelinePilotContainerRestarting` – any container restart in the last 15
+  minutes
+
+Alerts are visible in Prometheus (`http://prometheus.local/alerts`) and
+Alertmanager, and firing alerts also surface in Grafana's Alerting view. The
+default Alertmanager route has no external notification channel configured
+(local demo), so alerts are evidence of detection, not paging.
+
+### Container registry
+
+Gitea's built-in OCI container registry (Packages feature) is used instead of a
+separate registry service - one less moving part, same auth/users. Images live
+at `gitea.local/<owner>/<image>:<tag>`.
+
+```bash
+docker login gitea.local -u gitea_admin -p 'ChangeMe123!'
+docker tag pipeline-pilot:latest gitea.local/gitea_admin/pipeline-pilot:latest
+docker push gitea.local/gitea_admin/pipeline-pilot:latest
+```
+
+In-cluster pulls authenticate via a `regcred` `docker-registry` Secret (created
+in the `mgmt` and `dev` namespaces from a `read:package`-scoped Gitea token),
+referenced by the Helm chart's `imagePullSecrets` (see
+`apps/pipeline-pilot/helm/pipeline-pilot/values.yaml`).
+
+### CI: Gitea Actions
+
+- `infra/act-runner/` – `gitea/act_runner` + a privileged `docker:dind`
+  sidecar, deployed into `mgmt` via `scripts/install-act-runner.sh`. Jobs run
+  in a slim `node:20-bookworm-slim` container (Maven/Docker CLI installed as
+  workflow steps) via the runner's Docker connection to the sidecar.
+- CoreDNS has a rewrite rule (`gitea.local` → `ingress-nginx-controller` in
+  the `ingress-nginx` namespace) so `gitea.local` resolves the same way
+  in-cluster (for the runner/checkout/registry) as it does on the host.
+- Workflow: `.gitea/workflows/pipeline-pilot-ci.yml` - runs `mvn verify`, then
+  builds and pushes the image to the Gitea container registry on every push
+  touching `apps/pipeline-pilot/**`. Registry credentials are stored as
+  repo-level Actions secrets (`REGISTRY_USERNAME` / `REGISTRY_PASSWORD`).
+- Verified working end-to-end: `mvn verify` → `docker build` → image pushed to
+  `gitea.local/gitea_admin/pipeline-pilot` (tags `latest` and the commit SHA).
+
+### CD: Argo CD (GitOps)
+
+- `infra/argocd/` – Argo CD installed via Helm into its own `argocd`
+  namespace (`scripts/install-argocd.sh`), ingress at `argocd.local`, served
+  plain HTTP like the rest of the stack.
+- `infra/argocd/application-pipeline-pilot.yaml` – an `Application` watching
+  `apps/pipeline-pilot/helm/pipeline-pilot` on the `development` branch,
+  deployed to the `dev` namespace with automated sync, prune, and self-heal.
+- Closed-loop GitOps: after a successful image push, the CI workflow bumps
+  `apps/pipeline-pilot/helm/pipeline-pilot/image-tag.yaml` (a small
+  values-override file merged on top of `values.yaml`) with the new image
+  tag via Gitea's Contents API, and Argo CD picks up that commit
+  automatically. That file's path is excluded from the workflow's trigger
+  filter to avoid a build loop.
+- containerd on the kind node needs `config_path = "/etc/containerd/certs.d"`
+  (now in `kind/cluster-config.yaml`'s `containerdConfigPatches`) plus a
+  `hosts.toml` for `gitea.local` (written by `scripts/install-gitea.sh`) so
+  the kubelet can pull images from the registry over plain HTTP.
+- Add `127.0.0.1 argocd.local` to `/etc/hosts` (WSL and Windows, see the
+  Gitea section above), then browse to http://argocd.local. Get the initial
+  admin password with:
+  `kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d`
 
 ## Demo app endpoints
 
@@ -171,57 +327,34 @@ Build the application image locally:
 docker build -t pipeline-pilot:local ./apps/pipeline-pilot
 ```
 
-Push it to the local registry:
+For a manual registry test, authenticate and push to the Gitea registry:
 
 ```bash
-docker tag pipeline-pilot:local localhost:5000/pipeline-pilot:latest
-docker push localhost:5000/pipeline-pilot:latest
+docker login gitea.local -u gitea_admin
+docker tag pipeline-pilot:local gitea.local/gitea_admin/pipeline-pilot:manual
+docker push gitea.local/gitea_admin/pipeline-pilot:manual
 ```
 
-This is the basic pattern that the thesis can use to demonstrate a self-hosted build-and-publish flow.
+Normal deployments should be performed through a Git push so Gitea Actions builds,
+tags, and publishes the image before Argo CD synchronizes the Helm release.
 
-## Kubernetes and kind setup
 
-A local Kubernetes environment is part of the thesis target architecture. The repo includes a kind cluster config for this purpose:
+## Completed implementation status
 
-```bash
-cd <repo-root>
-./scripts/create-kind-cluster.sh
-kubectl cluster-info --context kind-thesis-cluster
-```
+The repository already contains the implemented self-hosted delivery pipeline described in the thesis:
 
-To delete the cluster:
+1. Local kind cluster for Kubernetes runtime
+2. Gitea hosting and built-in package registry
+3. Gitea Actions CI pipeline with tests, image build, and image push
+4. Argo CD GitOps deployment for the application
+5. Kubernetes deployment of the sample Spring Boot service
+6. Local ingress and host routing for internal services
 
-```bash
-./scripts/delete-kind-cluster.sh
-```
+The remaining work is focused on extension and validation rather than initial setup, such as:
 
-The cluster config is located at:
-
-- `kind/cluster-config.yaml`
-
-## Observability layer
-
-The project includes a baseline observability stack for future thesis extension:
-
-- Prometheus for metrics scraping
-- Grafana for dashboard visualization
-- Loki and Promtail for log aggregation
-- Spring Boot Actuator metrics endpoint at `/actuator/prometheus`
-
-This setup is intentionally small enough for local testing, but realistic enough to act as a lab environment for discussing system visibility and performance analysis.
-
-## Thesis roadmap next steps
-
-The current repo establishes the foundation. The next implementation phases are:
-
-1. Wire Gitea as the source repository and create a real project flow.
-2. Add Woodpecker CI and connect it to repository events.
-3. Add a kind-based deployment path and validate application rollout.
-4. Add GitOps automation with Flux or Argo CD.
-5. Add load generation and autoscaling scenarios to demonstrate scaling behavior.
-6. Connect Loki and Promtail into the app stack and validate log collection.
-7. Finalize the architecture chapter and evaluation section based on the working local setup.
+- load generation and autoscaling scenarios,
+- observability validation and dashboards,
+- final documentation refinement for the thesis narrative.
 
 ## Useful references
 
@@ -234,7 +367,8 @@ The current repo establishes the foundation. The next implementation phases are:
 - Grafana: https://grafana.com/
 - Loki: https://grafana.com/oss/loki/
 - Gitea: https://about.gitea.com/
-- Woodpecker CI: https://woodpecker-ci.org/
+- Gitea Actions: https://docs.gitea.com/usage/actions/overview
+- Gitea Runner: https://docs.gitea.com/runner/
 
 ## License
 

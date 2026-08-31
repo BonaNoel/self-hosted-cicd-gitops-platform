@@ -1,0 +1,63 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: pipeline-pilot-alerts
+  namespace: observability
+  labels:
+    release: monitoring
+spec:
+  groups:
+    - name: pipeline-pilot
+      rules:
+        - alert: PipelinePilotDown
+          expr: up{job="pipeline-pilot"} == 0
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "pipeline-pilot target is down"
+            description: "Prometheus has not been able to scrape pipeline-pilot for 2 minutes."
+
+        - alert: PipelinePilotHighLatency
+          expr: |
+            sum(rate(http_server_requests_seconds_sum{job="pipeline-pilot"}[5m]))
+            / sum(rate(http_server_requests_seconds_count{job="pipeline-pilot"}[5m]))
+            > 1
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "pipeline-pilot average latency is high"
+            description: "Average HTTP request latency has exceeded 1s for 5 minutes."
+
+        - alert: PipelinePilotHighCPUUtilization
+          expr: |
+            sum(rate(container_cpu_usage_seconds_total{namespace="dev",pod=~"pipeline-pilot-.*",container!=""}[5m]))
+            / sum(kube_pod_container_resource_requests{namespace="dev",pod=~"pipeline-pilot-.*",container="pipeline-pilot",resource="cpu",unit="core"})
+            > 0.9
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "pipeline-pilot CPU utilization is high"
+            description: "CPU utilization has exceeded 90% of requested CPU for 5 minutes, near the HPA max replica ceiling."
+
+        - alert: PipelinePilotDeploymentUnavailable
+          expr: |
+            kube_deployment_status_replicas_available{namespace="dev",deployment="pipeline-pilot"}
+            < kube_deployment_spec_replicas{namespace="dev",deployment="pipeline-pilot"}
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "pipeline-pilot has fewer available replicas than desired"
+            description: "Available replicas have been below the desired replica count for 5 minutes."
+
+        - alert: PipelinePilotContainerRestarting
+          expr: |
+            increase(kube_pod_container_status_restarts_total{namespace="dev",pod=~"pipeline-pilot-.*"}[15m]) > 0
+          labels:
+            severity: warning
+          annotations:
+            summary: "pipeline-pilot container restarted"
+            description: "A pipeline-pilot container has restarted within the last 15 minutes."

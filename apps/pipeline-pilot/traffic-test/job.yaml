@@ -1,0 +1,47 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: pipeline-pilot-traffic
+  namespace: dev
+  labels:
+    app.kubernetes.io/name: pipeline-pilot-traffic
+    app.kubernetes.io/part-of: pipeline-pilot
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 600
+  parallelism: 1
+  completions: 1
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: pipeline-pilot-traffic
+        app.kubernetes.io/part-of: pipeline-pilot
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: traffic-generator
+          image: curlimages/curl:8.12.1
+          env:
+            - name: REQUESTS
+              value: "30"
+            - name: CPU_MILLIS
+              value: "100"
+            - name: IO_MILLIS
+              value: "25"
+            - name: COMPLEXITY
+              value: "5000"
+            - name: PAUSE_SECONDS
+              value: "1"
+          command:
+            - sh
+            - -ec
+            - |
+              attempt=1
+              while [ "$attempt" -le "$REQUESTS" ]; do
+                curl -fsS http://pipeline-pilot.dev.svc.cluster.local/health >/dev/null
+                curl -fsS http://pipeline-pilot.dev.svc.cluster.local/users >/dev/null
+                curl -fsS "http://pipeline-pilot.dev.svc.cluster.local/simulate-load?cpuMillis=$CPU_MILLIS&ioMillis=$IO_MILLIS&complexity=$COMPLEXITY" >/dev/null
+                printf 'traffic iteration=%s worker=%s target=pipeline-pilot cpuMillis=%s ioMillis=%s complexity=%s result=success\n' "$attempt" "$HOSTNAME" "$CPU_MILLIS" "$IO_MILLIS" "$COMPLEXITY"
+                attempt=$((attempt + 1))
+                sleep "$PAUSE_SECONDS"
+              done

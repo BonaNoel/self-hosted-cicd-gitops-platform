@@ -1,0 +1,73 @@
+name: pipeline-pilot CI
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "apps/pipeline-pilot/**"
+      - "!apps/pipeline-pilot/helm/pipeline-pilot/image-tag.yaml"
+      - ".gitea/workflows/pipeline-pilot-ci.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Install Maven
+        run: apt-get update && apt-get install -y --no-install-recommends maven
+
+      - name: Run tests
+        working-directory: apps/pipeline-pilot
+        run: mvn -B verify
+
+  build-and-push:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Docker CLI
+        run: apt-get update && apt-get install -y --no-install-recommends docker.io
+
+      - name: Configure registry credentials
+        # `docker login` doesn't reliably honor daemon insecure-registries for TLS-mismatched hosts; write creds directly instead
+        run: |
+          mkdir -p ~/.docker
+          AUTH=$(printf '%s:%s' "${{ secrets.REGISTRY_USERNAME }}" "${{ secrets.REGISTRY_PASSWORD }}" | base64 -w0)
+          printf '{"auths":{"gitea.local":{"auth":"%s"}}}' "$AUTH" > ~/.docker/config.json
+
+      - name: Pre-pull base images
+        # sequential `docker pull` is reliable here; BuildKit resolving all base images concurrently
+        # intermittently trips a TLS/cert mismatch over the WSL2/Docker Desktop NAT path
+        run: |
+          docker pull maven:3.9.9-eclipse-temurin-21-alpine
+          docker pull eclipse-temurin:21-jdk-alpine
+          docker pull alpine:3.21
+
+      - name: Build image
+        working-directory: apps/pipeline-pilot
+        run: docker build -t gitea.local/gitea_admin/pipeline-pilot:${{ gitea.sha }} -t gitea.local/gitea_admin/pipeline-pilot:latest .
+
+      - name: Push image
+        run: |
+          docker push gitea.local/gitea_admin/pipeline-pilot:${{ gitea.sha }}
+          docker push gitea.local/gitea_admin/pipeline-pilot:latest
+
+      - name: Bump image tag in git (GitOps)
+        # actions/checkout downloads via the Gitea API (no real .git dir), so update the file via the Contents API instead of git commands
+        run: |
+          apt-get update && apt-get install -y --no-install-recommends curl jq
+          CONTENT=$(printf 'image:\n  tag: "%s"\n' "${{ gitea.sha }}" | base64 -w0)
+          CURRENT_SHA=$(curl -sf -u "gitea_admin:${{ secrets.GIT_PUSH_TOKEN }}" \
+            "http://gitea.local/api/v1/repos/gitea_admin/MSc-thesis/contents/apps/pipeline-pilot/helm/pipeline-pilot/image-tag.yaml?ref=${{ gitea.ref_name }}" \
+            | jq -r '.sha')
+          curl -sf -u "gitea_admin:${{ secrets.GIT_PUSH_TOKEN }}" -X PUT \
+            "http://gitea.local/api/v1/repos/gitea_admin/MSc-thesis/contents/apps/pipeline-pilot/helm/pipeline-pilot/image-tag.yaml" \
+            -H "Content-Type: application/json" \
+            -d "{\"content\":\"$CONTENT\",\"sha\":\"$CURRENT_SHA\",\"branch\":\"${{ gitea.ref_name }}\",\"message\":\"ci: deploy pipeline-pilot@${{ gitea.sha }}\"}"

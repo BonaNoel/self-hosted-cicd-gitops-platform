@@ -1,10 +1,22 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-HOME_DIR="${HOME:-/home/pimpu}"
+HOME_DIR="${HOME:?HOME must be set}"
 LOCAL_ROOT="$HOME_DIR/.local"
 BIN_DIR="$LOCAL_ROOT/bin"
 mkdir -p "$BIN_DIR"
+
+for command in curl find grep tar; do
+  if ! command -v "$command" >/dev/null 2>&1; then
+    printf 'Required command not found: %s\n' "$command" >&2
+    exit 1
+  fi
+done
+
+if [ "$(uname -s)" != "Linux" ] || [ "$(uname -m)" != "x86_64" ]; then
+  printf 'This bootstrap script currently supports Linux x86_64 only.\n' >&2
+  exit 1
+fi
 
 function install_java() {
   if [ -x "$LOCAL_ROOT/jdk/bin/java" ]; then
@@ -97,19 +109,12 @@ install_kind
 install_kubectl
 install_helm
 
-bashrc_file="$HOME_DIR/.bashrc"
-if ! grep -q 'export JAVA_HOME="$HOME/.local/jdk"' "$bashrc_file" 2>/dev/null; then
-  cat >> "$bashrc_file" <<'EOF'
-
-export JAVA_HOME="$HOME/.local/jdk"
-export M2_HOME="$HOME/.local/apache-maven"
-export PATH="$JAVA_HOME/bin:$M2_HOME/bin:$HOME/.local/bin:$PATH"
-EOF
-fi
-
 echo
 printf 'Local toolchain installed successfully.\n'
-printf 'Reload your shell with: source %s\n' "$bashrc_file"
-printf 'Then run:\n'
-printf '  cd %s && ./scripts/test-demo.sh\n' "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-printf '  cd %s && ./scripts/run-demo.sh\n' "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+printf 'For Bash or Zsh, run:\n'
+printf '  export JAVA_HOME="$HOME/.local/jdk"\n'
+printf '  export PATH="$HOME/.local/jdk/bin:$HOME/.local/apache-maven/bin:$HOME/.local/bin:$PATH"\n'
+printf 'For Fish, run:\n'
+printf '  set -gx PATH "$HOME/.local/jdk/bin" "$HOME/.local/apache-maven/bin" "$HOME/.local/bin" $PATH\n'
+printf 'Then verify the app with:\n'
+printf '  cd %s/apps/pipeline-pilot && mvn test\n' "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
