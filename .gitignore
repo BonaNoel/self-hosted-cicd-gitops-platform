@@ -19,3 +19,5 @@ Thumbs.db
 # Local environment files
 .env
 .env.*
+
+/.thesis-writing
