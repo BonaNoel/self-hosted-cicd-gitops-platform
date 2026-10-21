@@ -213,17 +213,18 @@ REQUESTS=120 CPU_MILLIS=500 IO_MILLIS=50 COMPLEXITY=20000 PAUSE_SECONDS=0 \
   bash scripts/run-observability-traffic-test.sh
 ```
 
-To reliably trigger HPA scale-out, run enough concurrent load to push CPU
-utilization above the 60% target for a sustained period:
+To collect a measurement run while watching the dashboard, use:
 
 ```bash
-WORKERS=8 REQUESTS=200 CPU_MILLIS=600 IO_MILLIS=25 COMPLEXITY=20000 PAUSE_SECONDS=0 \
-  bash scripts/run-observability-traffic-test.sh
+bash scripts/run-hpa-measurement.sh
 ```
 
-Watch `kubectl get hpa -n dev -w` or the `HPA Current and Desired Replicas`
-Grafana panel while it runs. After the Job completes, replicas scale back down
-once the HPA's stabilization window elapses.
+The measurement script samples HPA status and pod CPU/memory every 5 seconds,
+and saves the profile, CSV/TSV data, traffic log, and pre/post snapshots outside
+the repository under `~/thesis-writing/meresek/<run-id>/`. Save dashboard
+screenshots in that run's `screenshots/` subdirectory. Override the load profile
+with `WORKERS`, `REQUESTS`, `CPU_MILLIS`, `IO_MILLIS`, `COMPLEXITY`, and
+`PAUSE_SECONDS`; use `RUN_LABEL` to identify repeated trials.
 
 ### Alerting
 
@@ -244,6 +245,14 @@ Alerts are visible in Prometheus (`http://prometheus.local/alerts`) and
 Alertmanager, and firing alerts also surface in Grafana's Alerting view. The
 default Alertmanager route has no external notification channel configured
 (local demo), so alerts are evidence of detection, not paging.
+
+To demonstrate `PipelinePilotDown`, run the controlled alert test. It briefly
+scales the app to zero, waits for the alert to fire, then restores the original
+replica count and records the alert timeline outside the repository:
+
+```bash
+bash scripts/run-alerting-measurement.sh
+```
 
 ### Container registry
 

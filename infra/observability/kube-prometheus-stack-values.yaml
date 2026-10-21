@@ -27,8 +27,11 @@ prometheus:
     hosts:
       - prometheus.local
   prometheusSpec:
+    scrapeInterval: 15s
     additionalScrapeConfigs:
       - job_name: pipeline-pilot
+        scrape_interval: 5s
+        scrape_timeout: 3s
         metrics_path: /actuator/prometheus
         static_configs:
           - targets:

@@ -17,12 +17,20 @@ Demonstrates the HPA reacting to sustained CPU pressure and Grafana visualizing 
 kubectl get hpa -n dev -w
 ```
 
-In a second terminal:
+Or use the measurement runner, which samples the HPA and pod resources every
+5 seconds while the traffic Job runs. It saves results outside this repository
+under `~/thesis-writing/meresek/<run-id>/` by default:
 
 ```bash
-WORKERS=8 REQUESTS=200 CPU_MILLIS=600 IO_MILLIS=25 COMPLEXITY=20000 PAUSE_SECONDS=0 \
-  bash scripts/run-observability-traffic-test.sh
+bash scripts/run-hpa-measurement.sh
 ```
+
+Set `WORKERS`, `REQUESTS`, `CPU_MILLIS`, `IO_MILLIS`, `COMPLEXITY`,
+`PAUSE_SECONDS`, or `SAMPLE_INTERVAL_SECONDS` to customize the run. `RUN_LABEL`
+sets a recognizable experiment label. While it runs, watch Grafana and save
+screenshots in that run's `screenshots/` subdirectory. The output includes
+`hpa-samples.csv`, `pod-resources.tsv`, `traffic.log`, pre/post YAML snapshots,
+and `metadata.txt` with the exact workload profile and timestamps.
 
 **Record:**
 - Timestamp load starts
@@ -68,21 +76,21 @@ Demonstrates GitOps failure visibility and recovery, not just happy-path deploys
 Demonstrates observability is actionable, not just visual.
 
 Rules are in `infra/observability/pipeline-pilot-alerts.yaml`. To trigger one on
-demand:
+demand, run the alert measurement script. It temporarily scales the application
+Deployment to zero, samples the alert state and workload status, holds the alert
+firing for screenshots, then restores the original replica count automatically.
+This causes a brief planned outage; run it only in the demo environment:
 
 ```bash
-# High CPU utilization alert (target: >90% of requested CPU for 5 minutes)
-WORKERS=10 REQUESTS=400 CPU_MILLIS=800 IO_MILLIS=10 COMPLEXITY=20000 PAUSE_SECONDS=0 \
-  bash scripts/run-observability-traffic-test.sh
+RUN_LABEL=alert-trial-01 bash scripts/run-alerting-measurement.sh
 ```
 
-Or force `PipelinePilotDeploymentUnavailable` / `PipelinePilotDown`:
+The default wait matches `PipelinePilotDown`'s 2-minute `for` duration. Configure
+`HOLD_SECONDS` to extend the screenshot window. Results are saved outside the
+repository under `~/thesis-writing/meresek/<run-id>/`.
 
-```bash
-kubectl scale deployment/pipeline-pilot -n dev --replicas=0
-# ...wait 5 minutes, observe alert firing...
-kubectl scale deployment/pipeline-pilot -n dev --replicas=2
-```
+The script measures `PipelinePilotDown`. The other rules have different
+thresholds and require separate controlled load or failure scenarios.
 
 **Record:**
 - Screenshot of `http://prometheus.local/alerts` showing the alert transition
@@ -96,20 +104,40 @@ kubectl scale deployment/pipeline-pilot -n dev --replicas=2
 
 Demonstrates end-to-end delivery speed of the self-hosted pipeline.
 
-Make a trivial code change (e.g. a comment or log message) in
-`apps/pipeline-pilot/`, push to `development`, and record each stage:
+Start the watcher first:
+
+```bash
+RUN_LABEL=trial-01 bash scripts/run-deployment-lead-time-measurement.sh
+```
+
+When it reports that it is watching, make a small, real application change in
+`apps/pipeline-pilot/` and push it to the Gitea `development` branch. The script
+records when it first observes the remote revision, when Argo CD sees the new
+revision, and when Argo CD is `Synced`/`Healthy` and all desired application pods
+are `Ready`. Its polling interval is 2 seconds by default, and can be changed
+with `POLL_SECONDS`.
+
+The result directory is created outside the repository at
+`~/thesis-writing/meresek/<run-id>/`. It includes `deployment-timeline.csv`,
+`metadata.txt`, and before/after YAML snapshots. The reported lead time starts
+when the script first observes the remote branch change, not at the exact push
+timestamp; the uncertainty is bounded by the polling interval. If an exact push
+timestamp is needed, record it separately at push time.
+
+The script captures the deployment milestones automatically. For the CI stages,
+also record these timestamps from the Gitea Actions run:
 
 | Event | Where to check | Timestamp |
 |---|---|---|
-| Commit pushed | `git log` / Gitea commit view | |
 | CI workflow starts | Gitea Actions run view | |
 | `mvn verify` completes | Gitea Actions job log | |
 | Image pushed to registry | Gitea Actions job log (docker push step) | |
 | `image-tag.yaml` bumped | Gitea commit history (CI bot commit) | |
-| Argo CD sync completes | Argo CD app history / UI | |
-| New pod `Ready` | `kubectl get pods -n dev -w` | |
+| Push time (record separately for exact end-to-end lead time) | Gitea / terminal clock | |
 
-Lead time = (new pod Ready timestamp) − (commit pushed timestamp).
+End-to-end lead time = (all desired pods Ready) − (commit pushed timestamp).
+The script also reports observed deployment time = (all desired pods Ready) −
+(remote revision first observed).
 
 Repeat 2-3 times for an average and to show consistency.
 

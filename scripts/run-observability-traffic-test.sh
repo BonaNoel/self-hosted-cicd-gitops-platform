@@ -7,11 +7,13 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 NAMESPACE="dev"
 JOB_NAME="pipeline-pilot-traffic"
+MEASUREMENT_ID="${MEASUREMENT_ID:-$(date -u +%Y%m%dT%H%M%SZ)}"
 REQUESTS="${REQUESTS:-30}"
 CPU_MILLIS="${CPU_MILLIS:-100}"
 IO_MILLIS="${IO_MILLIS:-25}"
 COMPLEXITY="${COMPLEXITY:-5000}"
 PAUSE_SECONDS="${PAUSE_SECONDS:-1}"
+RAMP_STAGGER_SECONDS="${RAMP_STAGGER_SECONDS:-0}"
 WORKERS="${WORKERS:-1}"
 WAIT_TIMEOUT="${WAIT_TIMEOUT:-5m}"
 
@@ -30,6 +32,7 @@ validate_non_negative_integer CPU_MILLIS "$CPU_MILLIS"
 validate_non_negative_integer IO_MILLIS "$IO_MILLIS"
 validate_non_negative_integer COMPLEXITY "$COMPLEXITY"
 validate_non_negative_integer PAUSE_SECONDS "$PAUSE_SECONDS"
+validate_non_negative_integer RAMP_STAGGER_SECONDS "$RAMP_STAGGER_SECONDS"
 validate_non_negative_integer WORKERS "$WORKERS"
 
 if (( REQUESTS < 1 )); then
@@ -51,11 +54,13 @@ kubectl delete job "$JOB_NAME" --namespace "$NAMESPACE" --ignore-not-found
 # each worker is a separate Job completion; total requests issued = WORKERS * REQUESTS
 kubectl create --dry-run=client -o yaml -f "$REPO_ROOT/apps/pipeline-pilot/traffic-test/job.yaml" \
 	| kubectl set env --local -f - -o yaml \
+		"MEASUREMENT_ID=$MEASUREMENT_ID" \
 		"REQUESTS=$REQUESTS" \
 		"CPU_MILLIS=$CPU_MILLIS" \
 		"IO_MILLIS=$IO_MILLIS" \
 		"COMPLEXITY=$COMPLEXITY" \
 		"PAUSE_SECONDS=$PAUSE_SECONDS" \
+		"RAMP_STAGGER_SECONDS=$RAMP_STAGGER_SECONDS" \
 	| kubectl patch --local -f - --type=merge \
 		-p "{\"spec\":{\"parallelism\":$WORKERS,\"completions\":$WORKERS}}" \
 		-o yaml \
